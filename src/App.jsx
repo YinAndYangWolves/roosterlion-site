@@ -131,13 +131,14 @@ function usernameToKey(username) {
   return `cw_stats_${username}`;
 }
 
-async function ensureProfile(user, usernameOverride) {
+async function ensureProfile(user, usernameOverride, emailOverride) {
   if (!supabase || !user) return null;
   const username = usernameOverride || user.user_metadata?.username || user.email?.split("@")[0] || "Player";
   const defaultAvatar = DEFAULT_AVATARS[username.length % DEFAULT_AVATARS.length];
   const payload = {
     id: user.id,
     username,
+    email: emailOverride || user.email || null,
     avatar: defaultAvatar,
     bio: "",
     two_factor_enabled: false,
@@ -324,7 +325,7 @@ function LandingPage({ onStartAuth }) {
 
 function AuthPage({ onBack, onAuth }) {
   const [mode, setMode] = React.useState("login");
-  const [form, setForm] = React.useState({ username: "", password: "", confirm: "" });
+  const [form, setForm] = React.useState({ username: "", email: "", password: "", confirm: "" });
   const [message, setMessage] = React.useState("");
   const [loading, setLoading] = React.useState(false);
 
@@ -332,26 +333,36 @@ function AuthPage({ onBack, onAuth }) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  async function submit(e) {
-    e.preventDefault();
-    if (!form.username || !form.password) {
-      setMessage("Fill out the required fields first.");
+async function submit(e) {
+  e.preventDefault();
+
+  if (!form.username || !form.password) {
+    setMessage("Fill out the required fields first.");
+    return;
+  }
+
+  if (mode === "register") {
+    if (!form.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      setMessage("Enter a valid email address.");
       return;
     }
-    if (mode === "register" && form.password !== form.confirm) {
+
+    if (form.password !== form.confirm) {
       setMessage("Passwords do not match.");
       return;
     }
-    setLoading(true);
-    const result = await onAuth({
-      mode,
-      username: form.username.trim(),
-      email: safeEmailFromUsername(form.username),
-      password: form.password,
-    });
-    setMessage(result.message);
-    setLoading(false);
   }
+
+  setLoading(true);
+  const result = await onAuth({
+    mode,
+    username: form.username.trim(),
+    email: mode === "register" ? form.email.trim().toLowerCase() : "",
+    password: form.password,
+  });
+  setMessage(result.message);
+  setLoading(false);
+}
 
   return (
     <div style={styles.page}>
@@ -381,10 +392,14 @@ function AuthPage({ onBack, onAuth }) {
             <div style={{ color: "#94a3b8", marginTop: 6 }}>{mode === "login" ? "Use your username and password." : "Set up your new profile."}</div>
           </div>
           <form onSubmit={submit} style={{ display: "grid", gap: 14 }}>
-            <input style={styles.input} placeholder="Username" value={form.username} onChange={(e) => update("username", e.target.value)} />
-            <input style={styles.input} type="password" placeholder="Password" value={form.password} onChange={(e) => update("password", e.target.value)} />
-            {mode === "register" && <input style={styles.input} type="password" placeholder="Confirm Password" value={form.confirm} onChange={(e) => update("confirm", e.target.value)} />}
-            <button style={{ ...styles.button, width: "100%", marginTop: 4, opacity: loading ? 0.6 : 1 }} type="submit" disabled={loading}>{loading ? "Please wait..." : mode === "login" ? "Enter Game" : "Create Account"}</button>
+           <input style={styles.input} placeholder="Username" value={form.username} onChange={(e) => update("username", e.target.value)} />
+{mode === "register" && (
+  <input style={styles.input} placeholder="Email" value={form.email} onChange={(e) => update("email", e.target.value)} />
+)}
+<input style={styles.input} type="password" placeholder="Password" value={form.password} onChange={(e) => update("password", e.target.value)} />
+{mode === "register" && (
+  <input style={styles.input} type="password" placeholder="Confirm Password" value={form.confirm} onChange={(e) => update("confirm", e.target.value)} />
+)}
           </form>
           {message && <div style={styles.messageBox}>{message}</div>}
         </div>
@@ -810,7 +825,7 @@ export default function App() {
       if (!mounted) return;
       if (currentSession?.user) {
         setUser(currentSession.user);
-        const prof = await ensureProfile(currentSession.user);
+        const prof = await ensureProfile(currentSession.user, currentSession.user.user_metadata?.username, currentSession.user.email);
         setProfile(prof || (await fetchProfile(currentSession.user.id)));
         setPage("game");
         setLeaderboard(await fetchLeaderboard());
@@ -823,7 +838,7 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
       if (nextSession?.user) {
         setUser(nextSession.user);
-        const prof = await ensureProfile(nextSession.user);
+        const prof = await ensureProfile(nextSession.user, nextSession.user.user_metadata?.username, nextSession.user.email);
         setProfile(prof || (await fetchProfile(nextSession.user.id)));
         setPage("game");
         setLeaderboard(await fetchLeaderboard());
@@ -855,16 +870,31 @@ export default function App() {
       });
       if (error) return { ok: false, message: error.message };
       if (data.user) {
-        const prof = await ensureProfile(data.user, username);
+        const prof = await ensureProfile(data.user, username, email);
         setProfile(prof || (await fetchProfile(data.user.id)));
       }
       return { ok: true, message: "Account created successfully. You can now login." };
     }
 
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    let loginEmail = email;
+
+if (!loginEmail) {
+  const { data: profileMatch } = await supabase
+    .from("profiles")
+    .select("email")
+    .eq("username", username)
+    .maybeSingle();
+
+  loginEmail = profileMatch?.email || safeEmailFromUsername(username);
+}
+
+const { data, error } = await supabase.auth.signInWithPassword({
+  email: loginEmail,
+  password,
+});
     if (error) return { ok: false, message: error.message };
     if (data.user) {
-      const prof = await ensureProfile(data.user, username);
+      const prof = await ensureProfile(data.user, username, email);
       const fullProfile = prof || (await fetchProfile(data.user.id));
       setUser(data.user);
       setProfile(fullProfile);
