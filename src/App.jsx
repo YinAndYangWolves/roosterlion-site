@@ -323,110 +323,133 @@ function LandingPage({ onStartAuth }) {
   );
 }
 
-function AuthPage({ onBack, onAuth }) {
+function AuthPage({ onAuth }) {
   const [mode, setMode] = React.useState("login");
-  const [form, setForm] = React.useState({ username: "", email: "", password: "", confirm: "" });
+  const [form, setForm] = React.useState({
+    username: "",
+    email: "",
+    password: "",
+    confirm: ""
+  });
   const [message, setMessage] = React.useState("");
   const [loading, setLoading] = React.useState(false);
 
   function update(key, value) {
-    setForm((prev) => ({ ...prev, [key]: value }));
+    setForm(prev => ({ ...prev, [key]: value }));
   }
 
-async function submit(e) {
-  e.preventDefault();
-
-  if (!form.username || !form.password) {
-    setMessage("Fill out the required fields first.");
-    return;
+  function safeEmailFromUsername(username) {
+    return `${username.toLowerCase().replace(/[^a-z0-9]/g, "")}@colorwordle.local`;
   }
 
-  if (mode === "register") {
-    if (!form.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
-      setMessage("Enter a valid email address.");
+  async function submit(e) {
+    e.preventDefault();
+
+    if (!form.username || !form.password) {
+      setMessage("Fill out required fields.");
       return;
     }
 
-    if (form.password !== form.confirm) {
-      setMessage("Passwords do not match.");
-      return;
+    if (mode === "register") {
+      if (!form.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+        setMessage("Enter a valid email.");
+        return;
+      }
+
+      if (form.password.length < 6) {
+        setMessage("Password must be at least 6 characters.");
+        return;
+      }
+
+      if (form.password !== form.confirm) {
+        setMessage("Passwords do not match.");
+        return;
+      }
     }
+
+    setLoading(true);
+
+    const result = await onAuth({
+      mode,
+      username: form.username.trim(),
+      email:
+        mode === "login"
+          ? safeEmailFromUsername(form.username)
+          : form.email.trim().toLowerCase(),
+      password: form.password
+    });
+
+    setMessage(result.message);
+    setLoading(false);
   }
 
-  setLoading(true);
-  const result = await onAuth({
-    mode,
-    username: form.username.trim(),
-    email: mode === "register" ? form.email.trim().toLowerCase() : "",
-    password: form.password,
-  });
-  setMessage(result.message);
-  setLoading(false);
-}
-
   return (
-    <div style={styles.page}>
-      <div style={styles.bgOrbPink} />
-      <div style={styles.bgOrbBlue} />
-      <div style={styles.bgGrid} />
-      <div style={styles.authShell}>
-        <div style={styles.authInfo}>
-          <button style={styles.linkButton} onClick={onBack}>← Back to home</button>
-          <div style={styles.pill}>Player access</div>
-          <h2 style={{ fontSize: 48, lineHeight: 1.05, margin: "18px 0 10px" }}>Login to play Color Wordle.</h2>
-          <p style={{ color: "#cbd5e1", fontSize: 18, maxWidth: 520 }}>
-            Create your account, save progress, and jump into daily or random color puzzles across all game sizes.
-          </p>
-          <div style={styles.authSwatches}>
-            {COLORS.slice(0, 12).map((c) => <div key={c.id} style={{ ...styles.authSwatch, background: c.hex }} />)}
-          </div>
-        </div>
-
-        <div style={styles.authCard}>
-          <div style={styles.authTabsWrap}>
-            <button onClick={() => setMode("login")} style={mode === "login" ? styles.authTabActive : styles.authTab}>Login</button>
-            <button onClick={() => setMode("register")} style={mode === "register" ? styles.authTabActive : styles.authTab}>Register</button>
-          </div>
-          <div style={{ marginBottom: 18 }}>
-            <div style={{ fontSize: 28, fontWeight: 700 }}>{mode === "login" ? "Welcome back" : "Create account"}</div>
-            <div style={{ color: "#94a3b8", marginTop: 6 }}>{mode === "login" ? "Use your username and password." : "Set up your new profile."}</div>
-          </div>
-          <form onSubmit={submit} style={{ display: "grid", gap: 14 }}>
-           <input style={styles.input} placeholder="Username" value={form.username} onChange={(e) => update("username", e.target.value)} />
-{mode === "register" && (
-  <input style={styles.input} placeholder="Email" value={form.email} onChange={(e) => update("email", e.target.value)} />
-)}
-<input style={styles.input} type="password" placeholder="Password" value={form.password} onChange={(e) => update("password", e.target.value)} />
-{mode === "register" && (
-  <input style={styles.input} type="password" placeholder="Confirm Password" value={form.confirm} onChange={(e) => update("confirm", e.target.value)} />
-)}
-          </form>
-          {message && <div style={styles.messageBox}>{message}</div>}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LeaderboardPanel({ leaderboard, currentUserId, onViewProfile }) {
-  return (
-    <div style={styles.panelCard}>
-      <SectionTitle eyebrow="Global" title="Leaderboard" text="Top players across the app." />
-      <div style={{ display: "grid", gap: 10, marginTop: 18 }}>
-        {leaderboard.length === 0 && <div style={{ color: "#94a3b8" }}>No players yet.</div>}
-        {leaderboard.map((entry, index) => (
-          <button key={entry.id || entry.username || index} style={{ ...styles.leaderCard, outline: entry.id === currentUserId ? "2px solid rgba(56,189,248,0.45)" : "none" }} onClick={() => onViewProfile(entry)}>
-            <div style={styles.avatarCircle}>{entry.avatar || "🎨"}</div>
-            <div style={{ flex: 1, textAlign: "left" }}>
-              <div style={{ fontWeight: 700 }}>#{index + 1} {entry.username}</div>
-              <div style={{ color: "#94a3b8", fontSize: 13 }}>{entry.games || 0} games • {calcWinRate(entry.games || 0, entry.wins || 0)}% WR</div>
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={styles.rankValue}>{entry.wins || 0}</div>
-              <div style={{ color: "#94a3b8", fontSize: 12 }}>wins</div>
-            </div>
+    <div style={styles.container}>
+      <div style={styles.card}>
+        {/* Tabs */}
+        <div style={styles.tabs}>
+          <button
+            style={mode === "login" ? styles.activeTab : styles.tab}
+            onClick={() => setMode("login")}
+          >
+            Login
           </button>
-        ))}
+          <button
+            style={mode === "register" ? styles.activeTab : styles.tab}
+            onClick={() => setMode("register")}
+          >
+            Register
+          </button>
+        </div>
+
+        <h2>{mode === "login" ? "Welcome back" : "Create account"}</h2>
+
+        <form onSubmit={submit}>
+          <input
+            style={styles.input}
+            placeholder="Username"
+            value={form.username}
+            onChange={e => update("username", e.target.value)}
+          />
+
+          {mode === "register" && (
+            <input
+              style={styles.input}
+              placeholder="Email"
+              value={form.email}
+              onChange={e => update("email", e.target.value)}
+            />
+          )}
+
+          <input
+            style={styles.input}
+            type="password"
+            placeholder="Password"
+            value={form.password}
+            onChange={e => update("password", e.target.value)}
+          />
+
+          {mode === "register" && (
+            <input
+              style={styles.input}
+              type="password"
+              placeholder="Confirm Password"
+              value={form.confirm}
+              onChange={e => update("confirm", e.target.value)}
+            />
+          )}
+
+          {/* ✅ BUTTON FIX */}
+          <button style={styles.button} disabled={loading}>
+            {loading
+              ? "Loading..."
+              : mode === "login"
+              ? "Enter Game"
+              : "Create Account"}
+          </button>
+        </form>
+
+        {message && <p style={styles.message}>{message}</p>}
       </div>
     </div>
   );
@@ -981,6 +1004,64 @@ const glass = {
 };
 
 const styles = {
+    container: {
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    height: "100vh",
+    background: "#020617"
+  },
+  card: {
+    background: "#0f172a",
+    padding: "30px",
+    borderRadius: "16px",
+    width: "400px",
+    boxShadow: "0 0 40px rgba(0,0,0,0.6)"
+  },
+  tabs: {
+    display: "flex",
+    marginBottom: "20px"
+  },
+  tab: {
+    flex: 1,
+    padding: "10px",
+    background: "#1e293b",
+    color: "#aaa",
+    border: "none",
+    cursor: "pointer"
+  },
+  activeTab: {
+    flex: 1,
+    padding: "10px",
+    background: "#fff",
+    color: "#000",
+    border: "none",
+    fontWeight: "bold",
+    cursor: "pointer"
+  },
+  input: {
+    width: "100%",
+    padding: "12px",
+    marginBottom: "12px",
+    borderRadius: "8px",
+    border: "1px solid #334155",
+    background: "#020617",
+    color: "white"
+  },
+  button: {
+    width: "100%",
+    padding: "14px",
+    borderRadius: "10px",
+    border: "none",
+    background: "#fff",
+    color: "#000",
+    fontWeight: "bold",
+    cursor: "pointer"
+  },
+  message: {
+    marginTop: "10px",
+    color: "#f87171"
+  },
   page: { minHeight: "100vh", background: "linear-gradient(180deg, #05070c 0%, #09090b 100%)", color: "white", fontFamily: "Inter, Arial, sans-serif", position: "relative", overflow: "hidden" },
   bgOrbPink: { position: "absolute", top: -140, left: -100, width: 340, height: 340, borderRadius: "50%", background: "radial-gradient(circle, rgba(236,72,153,0.28) 0%, rgba(236,72,153,0) 72%)", filter: "blur(10px)" },
   bgOrbBlue: { position: "absolute", right: -120, top: 120, width: 420, height: 420, borderRadius: "50%", background: "radial-gradient(circle, rgba(59,130,246,0.22) 0%, rgba(59,130,246,0) 72%)", filter: "blur(14px)" },
